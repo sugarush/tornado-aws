@@ -24,10 +24,11 @@ class TestTornadoAWS(AsyncTestCase):
     def test_get(self):
         response = yield self.aws.request(
             service='ec2',
-            region='us-west-2',
+            region='us-east-1',
             method='GET',
             query='Action=DescribeRegions&Version=2013-10-15',
         )
+        print response.body
 
     @gen_test
     def test_post(self):

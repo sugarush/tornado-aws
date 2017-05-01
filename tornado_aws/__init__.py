@@ -40,68 +40,84 @@ class AWSRequest(object):
         self.amazon_format = '%Y%m%dT%H%M%SZ'
         self.stamp_format = '%Y%m%d'
 
-        self.methods = ['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS']
-
         self.access_key = kargs.get('access_key')
         self.secret_key = kargs.get('secret_key')
         self.region = kargs.get('region')
         self.service = kargs.get('service')
         self.method = kargs.get('method').upper()
 
-        self.now = datetime.now()
-
-        self.amazon_date = self.now.strftime(self.amazon_format)
-        self.stamp_date = self.now.strftime(self.stamp_format)
+        self.methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 
         if not (self.method in self.methods):
             raise Exception('Invalid method {method}'.format(
                 method=self.method
             ))
 
-        self.host = '{service}.{region}.amazonaws.com'.format(
+        self.now = datetime.utcnow()
+
+        self.amazon_date = self.now.strftime(self.amazon_format)
+        self.stamp_date = self.now.strftime(self.stamp_format)
+
+        # TODO: support regionless service
+        #self.host = '{service}.{region}.amazonaws.com'.format(
+        self.host = '{service}.amazonaws.com'.format(
             service=self.service,
-            region=self.region
+            #region=self.region
         )
 
         self.endpoint = 'https://{host}'.format(host=self.host)
         self.uri = kargs.get('uri', '/')
 
-        self.headers = HTTPHeaders()
+        self.headers = { }
+        self.canonical_headers = { }
+        self.request_headers = { }
 
-        self.body = kargs.get('body', '')
+        self.body = kargs.get('body', None)
         self.query = kargs.get('query', '')
 
         self.url = '{endpoint}?{query}'.format(endpoint=self.endpoint, query=self.query)
 
         self.content_type = kargs.get('content_type', 'application/x-amz-json-1.0')
 
-        self.header('content-type', self.content_type)
-        self.header('host', self.host)
+        self.header_request('accept', '*/*')
+        self.header_request('connection', 'keep-alive')
+        self.header_request('user-agent', 'tornado-aws/0.0.0')
+        self.header_request('content-type', self.content_type)
+
+        self.header_canonical('x-amz-date', self.amazon_date)
+        self.header_canonical('host', self.host)
 
         date = sign(('AWS4' + self.secret_key).encode('utf-8'), self.stamp_date)
         region = sign(date, self.region)
         service = sign(region, self.service)
         self.signing_key = sign(service, 'aws4_request')
 
-    def signiature(self):
-        return sign(self.signing_key, self.string())
 
-    def header(self, name, value):
-        name = '-'.join([ x.capitalize() for x in name.split('-') ])
-        self.headers[name] = value
+        self.header_request('authorization', self.authorization())
 
-    def headers_cannonical(self):
+    def signature(self):
+        return hmac.new(self.signing_key, self.string().encode('utf-8'), hashlib.sha256).hexdigest()
+
+    def header_canonical(self, name, value):
+        name = name.lower()
+        self.canonical_headers[name] = value
+
+    def header_request(self, name, value):
+        name = name.lower()
+        self.request_headers[name] = value
+
+    def headers_canonical(self):
         headers = ''
-        for k in sorted(self.headers):
+        for k in self.canonical_headers.keys():
             headers += '{key}:{value}\n'.format(
                 key=k.strip(),
-                value=self.headers[k]
+                value=self.canonical_headers[k]
             )
         return headers
 
     def headers_signed(self):
         headers = ''
-        for k in sorted(self.headers):
+        for k in self.canonical_headers.keys():
             headers += '{key};'.format(key=k.strip())
         return headers.rstrip(';')
 
@@ -109,30 +125,29 @@ class AWSRequest(object):
         kargs = copy(self.__dict__)
         return '{stamp_date}/{region}/{service}/aws4_request'.format(**kargs)
 
-    def request_cannonical(self):
+    def request_canonical(self):
         kargs = copy(self.__dict__)
+        kargs['body_hash'] = hexdigest(self.body or '')
+        kargs['headers_canonical'] = self.headers_canonical()
         kargs['headers_signed'] = self.headers_signed()
-        kargs['headers_cannonical'] = self.headers_cannonical()
-        kargs['body_hash'] = hexdigest(self.body)
-        string = '{method}\n{uri}\n{query}\n{headers_cannonical}\n{headers_signed}\n{body_hash}'.format(**kargs)
-        pprint(kargs)
-        return string
+        return '{method}\n{uri}\n{query}\n{headers_canonical}\n{headers_signed}\n{body_hash}'.format(**kargs)
 
     def string(self):
         kargs = copy(self.__dict__)
         kargs['scope'] = self.scope()
-        kargs['request_cannonical'] = hexdigest(self.request_cannonical())
-        return '{algorithm}\n{amazon_date}\n{scope}\n{request_cannonical}'.format(**kargs)
+        kargs['request_canonical'] = hexdigest(self.request_canonical())
+        return '{algorithm}\n{amazon_date}\n{scope}\n{request_canonical}'.format(**kargs)
 
     def authorization(self):
         kargs = copy(self.__dict__)
         kargs['scope'] = self.scope()
         kargs['headers_signed'] = self.headers_signed()
-        kargs['signiature'] = self.signiature()
-        return '{algorithm} Credential={access_key}/{scope}, SignedHeaders={headers_signed}, Signiature={signiature}'.format(**kargs)
+        kargs['signature'] = self.signature()
+        return '{algorithm} Credential={access_key}/{scope}, SignedHeaders={headers_signed}, Signature={signature}'.format(**kargs)
 
     def create(self):
-        self.header('Authorization', self.authorization())
+        self.headers.update(self.canonical_headers)
+        self.headers.update(self.request_headers)
         return HTTPRequest(self.url,
             method=self.method,
             headers=self.headers,
