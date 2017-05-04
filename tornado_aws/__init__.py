@@ -7,8 +7,8 @@ from tornado import gen
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.httputil import HTTPHeaders
 
-
-from pprint import pprint
+from xml.etree.ElementTree import XMLParser
+from util import XMLToDict
 
 
 def sign(key, msg):
@@ -16,6 +16,7 @@ def sign(key, msg):
 
 def hexdigest(msg):
     return hashlib.sha256(msg).hexdigest()
+
 
 class AWSClient(object):
 
@@ -30,12 +31,18 @@ class AWSClient(object):
         kargs['secret_key'] = self.secret_key
         request = AWSRequest(**kargs).create()
         response = yield self.client.fetch(request, raise_error=False)
-        raise gen.Return(response)
+        raise gen.Return(self.parse(response))
+
+    def parse(self, response):
+        parser = XMLParser(target=XMLToDict())
+        parser.feed(response.body)
+        return parser.close()
 
 
 class AWSRequest(object):
 
     def __init__(self, **kargs):
+        self.base = 'amazonaws.com'
         self.algorithm = 'AWS4-HMAC-SHA256'
         self.amazon_format = '%Y%m%dT%H%M%SZ'
         self.stamp_format = '%Y%m%d'
@@ -58,19 +65,17 @@ class AWSRequest(object):
         self.amazon_date = self.now.strftime(self.amazon_format)
         self.stamp_date = self.now.strftime(self.stamp_format)
 
-        # TODO: support regionless service
-        #self.host = '{service}.{region}.amazonaws.com'.format(
-        self.host = '{service}.amazonaws.com'.format(
-            service=self.service,
-            #region=self.region
-        )
-
-        self.endpoint = 'https://{host}'.format(host=self.host)
-        self.uri = kargs.get('uri', '/')
+        self.host = '{service}.{region}.{base}'.format(**self.__dict__)
 
         self.headers = { }
         self.canonical_headers = { }
         self.request_headers = { }
+
+        self.header_canonical('x-amz-date', self.amazon_date)
+        self.header_canonical('host', self.host)
+
+        self.endpoint = 'https://{host}'.format(host=self.host)
+        self.uri = kargs.get('uri', '/')
 
         self.body = kargs.get('body', None)
         self.query = kargs.get('query', '')
@@ -84,14 +89,10 @@ class AWSRequest(object):
         self.header_request('user-agent', 'tornado-aws/0.0.0')
         self.header_request('content-type', self.content_type)
 
-        self.header_canonical('x-amz-date', self.amazon_date)
-        self.header_canonical('host', self.host)
-
         date = sign(('AWS4' + self.secret_key).encode('utf-8'), self.stamp_date)
         region = sign(date, self.region)
         service = sign(region, self.service)
         self.signing_key = sign(service, 'aws4_request')
-
 
         self.header_request('authorization', self.authorization())
 

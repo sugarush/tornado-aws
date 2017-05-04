@@ -4,6 +4,7 @@ import ConfigParser
 from tornado.testing import AsyncTestCase, gen_test
 
 from tornado_aws import AWSClient
+from pprint import pprint
 
 
 class TestTornadoAWS(AsyncTestCase):
@@ -24,11 +25,11 @@ class TestTornadoAWS(AsyncTestCase):
     def test_get(self):
         response = yield self.aws.request(
             service='ec2',
-            region='us-east-1',
+            region='us-west-1',
             method='GET',
             query='Action=DescribeRegions&Version=2013-10-15',
         )
-        print response.body
+        pprint(response)
 
     @gen_test
     def test_post(self):
