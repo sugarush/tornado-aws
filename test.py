@@ -4,6 +4,7 @@ import ConfigParser
 from tornado.testing import AsyncTestCase, gen_test
 
 from tornado_aws import AWSClient
+
 from pprint import pprint
 
 
@@ -29,8 +30,39 @@ class TestTornadoAWS(AsyncTestCase):
             method='GET',
             query='Action=DescribeRegions&Version=2013-10-15',
         )
-        pprint(response)
+
+        #pprint(response)
+
+        regions = response['DescribeRegionsResponse']['regionInfo']['item']
+
+        assert regions[0]['regionName'] == 'ap-south-1'
+        assert regions[1]['regionName'] == 'eu-west-2'
+        assert regions[2]['regionName'] == 'eu-west-1'
 
     @gen_test
     def test_post(self):
-        pass
+        response = yield self.aws.request(
+            service='dynamodb',
+            region='us-west-2',
+            method='POST',
+            amazon_target='DynamoDB_20120810.CreateTable',
+            body='''
+                {
+                    "KeySchema": [
+                        {"KeyType": "HASH","AttributeName": "Id"}
+                    ],
+                    "TableName": "TestTable","AttributeDefinitions":[
+                        {"AttributeName": "Id","AttributeType": "S"}
+                    ],
+                    "ProvisionedThroughput": {
+                        "WriteCapacityUnits": 5,
+                        "ReadCapacityUnits": 5
+                    }
+                }
+            '''
+        )
+
+        #pprint(response)
+
+        assert response['__type'] == 'com.amazonaws.dynamodb.v20120810#ResourceInUseException'
+        assert response['message'] == 'Table already exists: TestTable'

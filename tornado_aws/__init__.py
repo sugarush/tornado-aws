@@ -7,8 +7,10 @@ from tornado import gen
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.httputil import HTTPHeaders
 
-from xml.etree.ElementTree import XMLParser
-from util import XMLToDict
+#from xml.etree.ElementTree import XMLParser
+#from util import XMLToDict
+
+import xmltodict, json
 
 
 def sign(key, msg):
@@ -34,9 +36,10 @@ class AWSClient(object):
         raise gen.Return(self.parse(response))
 
     def parse(self, response):
-        parser = XMLParser(target=XMLToDict())
-        parser.feed(response.body)
-        return parser.close()
+        try:
+            return xmltodict.parse(response.body)
+        except:
+            return json.loads(response.body)
 
 
 class AWSRequest(object):
@@ -52,6 +55,7 @@ class AWSRequest(object):
         self.region = kargs.get('region')
         self.service = kargs.get('service')
         self.method = kargs.get('method').upper()
+        self.amazon_target = kargs.get('amazon_target')
 
         self.methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 
@@ -88,6 +92,9 @@ class AWSRequest(object):
         self.header_request('connection', 'keep-alive')
         self.header_request('user-agent', 'tornado-aws/0.0.0')
         self.header_request('content-type', self.content_type)
+
+        if self.amazon_target:
+            self.header_request('x-amz-target', self.amazon_target)
 
         date = sign(('AWS4' + self.secret_key).encode('utf-8'), self.stamp_date)
         region = sign(date, self.region)
