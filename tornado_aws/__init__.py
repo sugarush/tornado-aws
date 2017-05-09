@@ -7,9 +7,6 @@ from tornado import gen
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.httputil import HTTPHeaders
 
-#from xml.etree.ElementTree import XMLParser
-#from util import XMLToDict
-
 import xmltodict, json
 
 
