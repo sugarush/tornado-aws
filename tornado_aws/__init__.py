@@ -28,7 +28,8 @@ class AWSClient(object):
     def request(self, **kargs):
         kargs['access_key'] = self.access_key
         kargs['secret_key'] = self.secret_key
-        request = AWSRequest(**kargs).create()
+        #request = AWSRequest(**kargs).create()
+        request = AWSRequest(**kargs)
         response = yield self.client.fetch(request, raise_error=False)
         raise gen.Return(self.parse(response))
 
@@ -40,6 +41,12 @@ class AWSClient(object):
 
 
 class AWSRequest(object):
+
+    def __new__(cls, **kargs):
+        # __init__ called explicitly because __new__ returns an object of
+        # different type from AWSRequest.
+        request = super(AWSRequest, cls).__init__(**kargs)
+        return request.create()
 
     def __init__(self, **kargs):
         self.base = 'amazonaws.com'
@@ -100,6 +107,9 @@ class AWSRequest(object):
 
         self.header_request('authorization', self.authorization())
 
+        self.headers.update(self.canonical_headers)
+        self.headers.update(self.request_headers)
+
     def signature(self):
         return hmac.new(self.signing_key, self.string().encode('utf-8'), hashlib.sha256).hexdigest()
 
@@ -151,8 +161,6 @@ class AWSRequest(object):
         return '{algorithm} Credential={access_key}/{scope}, SignedHeaders={headers_signed}, Signature={signature}'.format(**kargs)
 
     def create(self):
-        self.headers.update(self.canonical_headers)
-        self.headers.update(self.request_headers)
         return HTTPRequest(self.url,
             method=self.method,
             headers=self.headers,
