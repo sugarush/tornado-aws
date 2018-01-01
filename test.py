@@ -35,9 +35,12 @@ class TestTornadoAWS(AsyncTestCase):
 
         regions = response['DescribeRegionsResponse']['regionInfo']['item']
 
+        #pprint(regions)
+
         assert regions[0]['regionName'] == 'ap-south-1'
-        assert regions[1]['regionName'] == 'eu-west-2'
-        assert regions[2]['regionName'] == 'eu-west-1'
+        assert regions[1]['regionName'] == 'eu-west-3'
+        assert regions[2]['regionName'] == 'eu-west-2'
+        assert regions[3]['regionName'] == 'eu-west-1'
 
     @gen_test(timeout=10)
     def test_post(self):
